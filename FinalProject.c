@@ -6,6 +6,9 @@
 #define MEMORY_SIZE 1024
 uint32_t memory[MEMORY_SIZE];  // 4KB memory = 1024 x 4-byte words
 
+// Function prototype for instruction name mapping
+const char* get_instruction_name(uint8_t opcode);
+
 // Function to read memory image from file
 int file_read(const char *filename) {
     FILE *file = fopen(filename, "r");
@@ -23,13 +26,13 @@ int file_read(const char *filename) {
     }
 
     fclose(file);
-    printf("File Content Loaded. The number of words read: %d These are the words read.\n", index);
+    printf("File Content Loaded. The number of words read: %d.", index);
     return index;
 }
 
 // Function to print memory content in hex and binary
 void print_contents(int start, int end) {
-    printf("\n Text Contents \n");
+    printf("\n The Text Contents are: \n");
     for (int i = start; i <= end && i < MEMORY_SIZE; i++) {
         printf("0x%04X : 0x%08X : ", i * 4, memory[i]);
 
@@ -42,25 +45,78 @@ void print_contents(int start, int end) {
     }
 }
 
-// Function to decode a single 32-bit instruction
 void decode_instruction(uint32_t instruction) {
-    uint8_t opcode = (instruction >> 26) & 0x3F;       // bits [31:26]
-    uint8_t rs = (instruction >> 21) & 0x1F;           // bits [25:21]
-    uint8_t rt = (instruction >> 16) & 0x1F;           // bits [20:16]
-    uint8_t rd = (instruction >> 11) & 0x1F;           // bits [15:11]
-    int16_t imm = instruction & 0xFFFF;                // bits [15:0]
+    uint8_t opcode = (instruction >> 26) & 0x3F;
+    uint8_t rs = (instruction >> 21) & 0x1F;
+    uint8_t rt = (instruction >> 16) & 0x1F;
+    uint8_t rd = (instruction >> 11) & 0x1F;
+    int16_t imm = instruction & 0xFFFF;
 
-    // Sign-extend the immediate if necessary
     if (imm & 0x8000) {
         imm |= 0xFFFF0000;
     }
 
-    printf("\nDecoded Instruction:\n");
-    printf("  The Opcode is: 0x%02X\n", opcode);
-    printf("  Rs: R%d\n", rs);
-    printf("  Rt: R%d\n", rt);
-    printf("  Rd: R%d\n", rd);
-    printf("  Imm: %d\n", imm);
+    const char* instr_name = get_instruction_name(opcode);
+
+    printf("\nDecoded Instruction: 0x%08X\n", instruction);
+    printf("  Opcode: 0x%02X\n", opcode);
+    printf("  Rs: R%d, Rt: R%d, Rd: R%d, Imm: %d\n", rs, rt, rd, imm);
+
+    // Additional MIPS-style representation
+    printf(" MIPS_LITE Instruction : ");
+    if (opcode <= 0x0A) { // Arithmetic/Logical
+        if (opcode % 2 == 0) {
+            // R-type: ADD Rd, Rs, Rt
+            printf("%s R%d, R%d, R%d\n", instr_name, rd, rs, rt);
+        } else {
+            // I-type: ADDI Rt, Rs, Imm
+            printf("%s R%d, R%d, %d\n", instr_name, rt, rs, imm);
+        }
+    } else if (opcode == 0x0C || opcode == 0x0D) {
+        // LDW / STW: Rt, Rs, Imm
+        printf("%s R%d, R%d, %d\n", instr_name, rt, rs, imm);
+    } else if (opcode == 0x0E) {
+        // BZ: Rs, offset
+        printf("%s R%d, %d\n", instr_name, rs, imm);
+    } else if (opcode == 0x0F) {
+        // BEQ: Rs, Rt, offset
+        printf("%s R%d, R%d, %d\n", instr_name, rs, rt, imm);
+    } else if (opcode == 0x10) {
+        // JR: Rs
+        printf("%s R%d\n", instr_name, rs);
+    } else if (opcode == 0x11) {
+        // HALT
+        printf("%s\n", instr_name);
+    } else {
+        printf("Unknown format\n");
+    }
+}
+
+
+
+// Instruction name lookup
+const char* get_instruction_name(uint8_t opcode) {
+    switch (opcode) {
+        case 0x00: return "ADD";
+        case 0x01: return "ADDI";
+        case 0x02: return "SUB";
+        case 0x03: return "SUBI";
+        case 0x04: return "MUL";
+        case 0x05: return "MULI";
+        case 0x06: return "OR";
+        case 0x07: return "ORI";
+        case 0x08: return "AND";
+        case 0x09: return "ANDI";
+        case 0x0A: return "XOR";
+        case 0x0B: return "XORI";
+        case 0x0C: return "LDW";
+        case 0x0D: return "STW";
+        case 0x0E: return "BZ";
+        case 0x0F: return "BEQ";
+        case 0x10: return "JR";
+        case 0x11: return "HALT";
+        default:   return "UNKNOWN";
+    }
 }
 
 int main() {

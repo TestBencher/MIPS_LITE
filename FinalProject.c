@@ -112,6 +112,36 @@ int decode(instruction fetched_instr, R_type *r_type, I_type *i_type)
     }
 }
 
+void halt_summary()
+{
+    printf("\n--- Simulation Summary ---\n");
+    printf("Total Instructions Executed: %d\n", total_instructions);
+    printf("Arithmetic Instructions: %d\n", arithmetic_count);
+    printf("Logical Instructions: %d\n", logical_count);
+    printf("Memory Access Instructions: %d\n", memory_count);
+    printf("Control Transfer Instructions: %d\n", control_count);
+
+    printf("\nFinal Register States (non-zero only):\n");
+    for (int i = 0; i < 32; i++)
+    {
+        if (registers[i] != 0)
+        {
+            printf("R%-2d: %d\n", i, registers[i]);
+        }
+    }
+
+    printf("\nFinal Memory States (non-zero only):\n");
+    for (int i = 0; i < MEMORY_SIZE; i++)
+    {
+        if (memory[i] != 0)
+        {
+            printf("Memory[0x%04X]: 0x%08X\n", i * 4, memory[i]);
+        }
+    }
+
+    exit(0);
+}
+
 // Execute Stage: Executes the decoded R-type instruction
 void execute_r_type(R_type *r_type)
 {
@@ -233,7 +263,7 @@ void execute_i_type(I_type *i_type)
         break;
     case 0x11: // HALT
         printf("\n[INFO] HALT instruction encountered. Terminating simulation.\n");
-        exit(0);
+        halt_summary();
     default:
         printf("\n[ERROR] Unknown I-type opcode: 0x%02X\n", i_type->opcode);
         exit(1);
@@ -314,7 +344,10 @@ int main(int argc, char *argv[])
 
     PC = 0;
     for (int i = 0; i < 32; i++)
+    {
         registers[i] = 0;
+        modified_registers[i] = false; // Initialize modified registers
+    }
 
     // Register & Memory Initialization for test
     // registers[4] = 10;

@@ -9,6 +9,7 @@
 // Global Variables
 uint32_t memory[MEMORY_SIZE];
 int32_t registers[32];
+bool modified_registers[32] = {false}; // Array to track modified registers
 uint32_t PC = 0;
 
 int total_instructions = 0;

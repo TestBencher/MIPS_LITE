@@ -12,6 +12,7 @@ instruction fetch();
 int decode(instruction fetched_instr, R_type *r_type, I_type *i_type);
 void execute_r_type(R_type *r_type);
 void execute_i_type(I_type *i_type);
+void printModRegs();
 
 int file_read(const char *filename)
 {
@@ -57,6 +58,7 @@ void print_contents(int start, int end)
         }
         printf("\n");
     }
+    printf("\n");
 }
 
 // Fetch Stage: Fetches the instruction from memory
@@ -74,7 +76,9 @@ int decode(instruction fetched_instr, R_type *r_type, I_type *i_type)
     uint32_t instr = fetched_instr.instruction;
     uint8_t opcode = (instr >> 26) & 0x3F; // Extract opcode (6 bits)
 
-    if (opcode <= 0x10) // R-type instruction (opcode range for R-type)
+    // Define R-type opcodes explicitly
+    if (opcode == 0x00 || opcode == 0x02 || opcode == 0x04 || opcode == 0x06 ||
+        opcode == 0x08 || opcode == 0x0A) // R-type instruction opcodes
     {
         r_type->opcode = opcode;
         r_type->rs = (instr >> 21) & 0x1F; // Extract Rs (5 bits)
@@ -84,7 +88,7 @@ int decode(instruction fetched_instr, R_type *r_type, I_type *i_type)
         // Debug output
         printf("DEBUG: Decoded R-type Instruction: %s R%d, R%d, R%d\n",
                get_instruction_name(opcode), r_type->rd, r_type->rs, r_type->rt);
-        printf("DEBUG: %4x %4x %4x %4x\n", opcode, r_type->rs, r_type->rt, r_type->rd);
+        printf("DEBUG: Opcode: %4x, Rs: %4x, Rt: %4x, Rd: %4x\n", opcode, r_type->rs, r_type->rt, r_type->rd);
 
         return 0; // Return 0 for R-type
     }
@@ -102,7 +106,7 @@ int decode(instruction fetched_instr, R_type *r_type, I_type *i_type)
         // Debug output
         printf("DEBUG: Decoded I-type Instruction: %s R%d, R%d, %d\n",
                get_instruction_name(opcode), i_type->rt, i_type->rs, i_type->imm);
-        printf("DEBUG: %4x %4x %4x %4x\n", opcode, i_type->rs, i_type->rt, i_type->imm);
+        printf("DEBUG: Opcode: %4x, Rs: %4x, Rt: %4x, Imm: %4x\n", opcode, i_type->rs, i_type->rt, i_type->imm);
 
         return 1; // Return 1 for I-type
     }
@@ -117,26 +121,32 @@ void execute_r_type(R_type *r_type)
     {
     case 0x00: // ADD
         registers[r_type->rd] = registers[r_type->rs] + registers[r_type->rt];
+        modified_registers[r_type->rd] = true;
         arithmetic_count++;
         break;
     case 0x02: // SUB
         registers[r_type->rd] = registers[r_type->rs] - registers[r_type->rt];
+        modified_registers[r_type->rd] = true;
         arithmetic_count++;
         break;
     case 0x04: // MUL
         registers[r_type->rd] = registers[r_type->rs] * registers[r_type->rt];
+        modified_registers[r_type->rd] = true;
         arithmetic_count++;
         break;
     case 0x06: // OR
         registers[r_type->rd] = registers[r_type->rs] | registers[r_type->rt];
+        modified_registers[r_type->rd] = true;
         logical_count++;
         break;
     case 0x08: // AND
         registers[r_type->rd] = registers[r_type->rs] & registers[r_type->rt];
+        modified_registers[r_type->rd] = true;
         logical_count++;
         break;
     case 0x0A: // XOR
         registers[r_type->rd] = registers[r_type->rs] ^ registers[r_type->rt];
+        modified_registers[r_type->rd] = true;
         logical_count++;
         break;
     default:
@@ -154,36 +164,59 @@ void execute_i_type(I_type *i_type)
     {
     case 0x01: // ADDI
         registers[i_type->rt] = registers[i_type->rs] + i_type->imm;
+        modified_registers[i_type->rt] = true;
         arithmetic_count++;
         break;
     case 0x03: // SUBI
         registers[i_type->rt] = registers[i_type->rs] - i_type->imm;
+        modified_registers[i_type->rt] = true;
         arithmetic_count++;
         break;
     case 0x05: // MULI
         registers[i_type->rt] = registers[i_type->rs] * i_type->imm;
+        modified_registers[i_type->rt] = true;
         arithmetic_count++;
         break;
     case 0x07: // ORI
         registers[i_type->rt] = registers[i_type->rs] | i_type->imm;
+        modified_registers[i_type->rt] = true;
         logical_count++;
         break;
     case 0x09: // ANDI
         registers[i_type->rt] = registers[i_type->rs] & i_type->imm;
+        modified_registers[i_type->rt] = true;
         logical_count++;
         break;
     case 0x0B: // XORI
         registers[i_type->rt] = registers[i_type->rs] ^ i_type->imm;
+        modified_registers[i_type->rt] = true;
         logical_count++;
         break;
     case 0x0C: // LDW
-        registers[i_type->rt] = memory[(registers[i_type->rs] + i_type->imm) / 4];
+    {
+        int32_t effective_address = registers[i_type->rs] + i_type->imm;
+        if (effective_address < 0 || effective_address / 4 >= MEMORY_SIZE)
+        {
+            printf("\n[ERROR] Memory access out of bounds at address 0x%08X\n", effective_address);
+            exit(1);
+        }
+        registers[i_type->rt] = memory[effective_address / 4];
+        modified_registers[i_type->rt] = true;
         memory_count++;
-        break;
+    }
+    break;
     case 0x0D: // STW
-        memory[(registers[i_type->rs] + i_type->imm) / 4] = registers[i_type->rt];
+    {
+        int32_t effective_address = registers[i_type->rs] + i_type->imm;
+        if (effective_address < 0 || effective_address / 4 >= MEMORY_SIZE)
+        {
+            printf("\n[ERROR] Memory access out of bounds at address 0x%08X\n", effective_address);
+            exit(1);
+        }
+        memory[effective_address / 4] = registers[i_type->rt];
         memory_count++;
-        break;
+    }
+    break;
     case 0x0E: // BZ
         if (registers[i_type->rs] == 0)
             PC += i_type->imm;
@@ -252,6 +285,20 @@ const char *get_instruction_name(uint8_t opcode)
     }
 }
 
+void printModRegs()
+{
+    printf("\nModified Registers:\n");
+    for (int i = 0; i < 32; i++)
+    {
+        if (modified_registers[i])
+        {
+            printf("R%d = %d\n", i, registers[i]);
+            modified_registers[i] = false; // Reset the modified flag
+        }
+    }
+    printf("\n");
+}
+
 int main(int argc, char *argv[])
 {
     if (argc != 2) // Check if the filename is provided as an argument
@@ -277,7 +324,7 @@ int main(int argc, char *argv[])
 
     while (PC / 4 < words_read)
     {
-        printf("DEBUG: Fetching instruction at PC = 0x%08X\n", PC);
+        printf("\nDEBUG: Fetching instruction at PC = 0x%08X\n", PC);
         instruction fetched_instr = fetch();
 
         printf("DEBUG: Decoding instruction 0x%08X\n", fetched_instr.instruction);
@@ -294,6 +341,9 @@ int main(int argc, char *argv[])
         {
             execute_i_type(&i_type);
         }
+
+        // Print modified registers
+        printModRegs();
     }
 
     printf("\n[WARN] Simulation ended without HALT.\n");

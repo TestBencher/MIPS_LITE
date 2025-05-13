@@ -293,7 +293,7 @@ void printModRegs()
         if (modified_registers[i])
         {
             printf("R%d = %d\n", i, registers[i]);
-            modified_registers[i] = false; // Reset the modified flag
+            // modified_registers[i] = false; // Reset the modified flag
         }
     }
     printf("\n");

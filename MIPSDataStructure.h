@@ -26,7 +26,6 @@ typedef struct instruction
 typedef struct R_type
 {
     uint8_t opcode;
-    uint8_t funct;
     uint8_t rs;
     uint8_t rt;
     uint8_t rd;

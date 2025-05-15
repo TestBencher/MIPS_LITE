@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdbool.h>
 
-#define MEMORY_SIZE 4096
+#define MEMORY_SIZE 4096 // 4KB
 
 // Global Variables
 uint32_t memory[MEMORY_SIZE];

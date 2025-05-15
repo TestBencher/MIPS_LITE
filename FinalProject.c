@@ -23,7 +23,7 @@ int file_read(const char *filename)
         exit(EXIT_FAILURE);
     }
 
-    char line[20];
+    char line[1024];
     int index = 0;
 
     while (fgets(line, sizeof(line), file) != NULL && index < MEMORY_SIZE)

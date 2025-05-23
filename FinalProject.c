@@ -249,12 +249,12 @@ void execute_i_type(I_type *i_type)
     break;
     case 0x0E: // BZ
         if (registers[i_type->rs] == 0)
-            PC += i_type->imm;
+            PC += i_type->imm*4;
         control_count++;
         break;
     case 0x0F: // BEQ
         if (registers[i_type->rs] == registers[i_type->rt])
-            PC += i_type->imm;
+            PC += i_type->imm*4;
         control_count++;
         break;
     case 0x10: // JR

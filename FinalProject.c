@@ -64,6 +64,15 @@ void advance_pipeline() {
     }
     pipeline[0].valid = false;
 }
+// Returns the stage where the dependent instruction is (for forwarding)
+int get_producer_stage(int dest_reg) {
+    for (int i = 2; i <= 4; i++) {
+        if (!pipeline[i].valid) continue;
+        int dest = (pipeline[i].type == 0) ? pipeline[i].r_type.rd : pipeline[i].i_type.rt;
+        if (dest == dest_reg && dest != 0) return i; // EX=2, MEM=3, WB=4
+    }
+    return -1;
+}
 
 bool has_raw_hazard(PipelineStage curr) {
     if (!curr.valid) return false;
@@ -204,22 +213,232 @@ void simulate_pipeline(int word_count) {
         advance_pipeline();
     }
 }
+void functional_simulation(int word_count);
+void functional_simulation(int word_count) {
+    while (PC / 4 < word_count) {
+        uint32_t instruction = memory[PC / 4];
+        uint8_t opcode = (instruction >> 26) & 0x3F;
+        uint8_t rs = (instruction >> 21) & 0x1F;
+        uint8_t rt = (instruction >> 16) & 0x1F;
+        uint8_t rd = (instruction >> 11) & 0x1F;
+        int16_t imm = instruction & 0xFFFF;
+        if (imm & 0x8000) imm |= 0xFFFF0000;
+
+        total_instructions++;
+
+        switch (opcode) {
+            case 0x00: // ADD
+                registers[rd] = registers[rs] + registers[rt];
+                modified_registers[rd] = true;
+                arithmetic_count++;
+                PC += 4;
+                break;
+            case 0x01: // ADDI
+                registers[rt] = registers[rs] + imm;
+                modified_registers[rt] = true;
+                arithmetic_count++;
+                PC += 4;
+                break;
+            case 0x02: // SUB
+                registers[rd] = registers[rs] - registers[rt];
+                modified_registers[rd] = true;
+                arithmetic_count++;
+                PC += 4;
+                break;
+            case 0x03: // SUBI
+                registers[rt] = registers[rs] - imm;
+                modified_registers[rt] = true;
+                arithmetic_count++;
+                PC += 4;
+                break;
+            case 0x04: // MUL
+                registers[rd] = registers[rs] * registers[rt];
+                modified_registers[rd] = true;
+                arithmetic_count++;
+                PC += 4;
+                break;
+            case 0x05: // MULI
+                registers[rt] = registers[rs] * imm;
+                modified_registers[rt] = true;
+                arithmetic_count++;
+                PC += 4;
+                break;
+            case 0x06: // OR
+                registers[rd] = registers[rs] | registers[rt];
+                modified_registers[rd] = true;
+                logical_count++;
+                PC += 4;
+                break;
+            case 0x07: // ORI
+                registers[rt] = registers[rs] | imm;
+                modified_registers[rt] = true;
+                logical_count++;
+                PC += 4;
+                break;
+            case 0x08: // AND
+                registers[rd] = registers[rs] & registers[rt];
+                modified_registers[rd] = true;
+                logical_count++;
+                PC += 4;
+                break;
+            case 0x09: // ANDI
+                registers[rt] = registers[rs] & imm;
+                modified_registers[rt] = true;
+                logical_count++;
+                PC += 4;
+                break;
+            case 0x0A: // XOR
+                registers[rd] = registers[rs] ^ registers[rt];
+                modified_registers[rd] = true;
+                logical_count++;
+                PC += 4;
+                break;
+            case 0x0B: // XORI
+                registers[rt] = registers[rs] ^ imm;
+                modified_registers[rt] = true;
+                logical_count++;
+                PC += 4;
+                break;
+            case 0x0C: // LDW
+                registers[rt] = memory[(registers[rs] + imm) / 4];
+                modified_registers[rt] = true;
+                memory_count++;
+                PC += 4;
+                break;
+            case 0x0D: // STW
+                memory[(registers[rs] + imm) / 4] = registers[rt];
+                memory_count++;
+                PC += 4;
+                break;
+            case 0x0E: // BZ
+                if (registers[rs] == 0)
+                    PC += imm * 4;
+                else
+                    PC += 4;
+                control_count++;
+                break;
+            case 0x0F: // BEQ
+                if (registers[rs] == registers[rt])
+                    PC += imm * 4;
+                else
+                    PC += 4;
+                control_count++;
+                break;
+            case 0x10: // JR
+                PC = registers[rs];
+                control_count++;
+                break;
+            case 0x11: // HALT
+                printf("\n[INFO] HALT encountered in functional simulation.\n");
+                PC += 4;  // Include HALT step in PC reporting
+                print_simulation_summary();
+                return;
+            default:
+                printf("\n[ERROR] Unknown opcode 0x%02X at PC=0x%08X\n", opcode, PC);
+                exit(1);
+        }
+    }
+
+    printf("\n[WARN] Functional simulation ended without HALT.\n");
+    print_simulation_summary();
+}
+
+
+void simulate_pipeline(int word_count);
+
+void simulate_pipeline_with_forwarding(int word_count);
+
+void simulate_pipeline_with_forwarding(int word_count) {
+    memset(pipeline, 0, sizeof(pipeline));
+    int fetch_index = 0;
+
+    while (1) {
+        clock_cycles++;
+
+        // Execute in WB
+        if (pipeline[4].valid) {
+            uint8_t opcode = (pipeline[4].type == 0) ? pipeline[4].r_type.opcode : pipeline[4].i_type.opcode;
+            execute(pipeline[4]);
+
+            if (opcode == 0x11) break;  // HALT encountered
+        }
+
+        // Forwarding logic: eliminate stalls if data can be forwarded
+        bool stall_needed = false;
+        if (pipeline[1].valid) {
+            int src1 = (pipeline[1].type == 0) ? pipeline[1].r_type.rs : pipeline[1].i_type.rs;
+            int src2 = (pipeline[1].type == 0) ? pipeline[1].r_type.rt : pipeline[1].i_type.rt;
+
+            for (int i = 2; i <= 4; i++) {
+                if (!pipeline[i].valid) continue;
+
+                int dest = (pipeline[i].type == 0) ? pipeline[i].r_type.rd : pipeline[i].i_type.rt;
+                if ((src1 == dest || src2 == dest) && dest != 0) {
+                    stall_needed = false;  // Forwarding available
+                    break;
+                }
+            }
+        }
+
+        if (stall_needed) {
+            stall_count++;
+            pipeline[2].valid = false;
+            advance_pipeline();
+            continue;
+        }
+
+        // Fetch new instruction if available
+        if (fetch_index < word_count) {
+            pipeline[0] = decode(memory[fetch_index], PC);
+            fetch_index++;
+            PC += 4;
+        } else {
+            pipeline[0].valid = false;
+        }
+
+        advance_pipeline();
+    }
+
+    print_simulation_summary();
+}
+
 
 int main() {
     char filename[100];
+    int mode = -1;
+
     printf("Enter the text filename: ");
     fgets(filename, sizeof(filename), stdin);
     filename[strcspn(filename, "\n")] = '\0';
 
     int word_count = file_read(filename);
+    //print_contents(0, word_count - 1);
 
-    // REMOVE or comment out this line if present
-    // print_contents(0, word_count - 1);
-
-    for (int i = 0; i < 32; i++) registers[i] = 0;
+    for (int i = 0; i < 32; i++) {
+        registers[i] = 0;
+        modified_registers[i] = false;
+    }
     PC = 0;
 
-    simulate_pipeline(word_count);
+    // Ask user for simulation mode
+    printf("\nSelect simulation mode:\n");
+    printf("0 - Functional Simulation\n");
+    printf("1 - Pipelined Simulation (no forwarding)\n");
+    printf("2 - Pipelined Simulation (with forwarding)\n");
+    printf("Enter mode (0/1/2): ");
+    scanf("%d", &mode);
+    getchar(); // consume trailing newline
+
+    if (mode == 0) {
+        functional_simulation(word_count);
+    } else if (mode == 1) {
+        simulate_pipeline(word_count);
+    } else if (mode == 2) {
+        simulate_pipeline_with_forwarding(word_count);
+    } else {
+        printf("Invalid simulation mode selected.\n");
+        return 1;
+    }
 
     return 0;
 }

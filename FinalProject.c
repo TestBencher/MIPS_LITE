@@ -397,27 +397,9 @@ void printModRegs()
     printf("\n");
 }
 
-int main(int argc, char *argv[])
+void functional_simulator(int words_read)
 {
     int32_t ALU_result, mem_result = 0;
-    if (argc != 2) // Check if the filename is provided as an argument
-    {
-        printf("Usage: %s <filename>\n", argv[0]);
-        return 1;
-    }
-
-    const char *filename = argv[1]; // Get the filename from the command-line argument
-
-    int words_read = file_read(filename);
-    print_contents(0, words_read - 1);
-
-    PC = 0;
-    for (int i = 0; i < 32; i++)
-    {
-        registers[i] = 0;
-        modified_registers[i] = false; // Initialize modified registers
-    }
-
     while (PC / 4 < words_read)
     {
         printf("\nDEBUG: Fetching instruction at PC = 0x%08X\n", PC);
@@ -438,6 +420,56 @@ int main(int argc, char *argv[])
 
         // Print modified registers
         printModRegs();
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    if (argc != 3) // Check if the filename is provided as an argument
+    {
+        printf("Usage: %s <Filename> <Mode>\n", argv[0]);
+        printf("<Filename>: input mem filename\n");
+        printf("<Mode>: 0/1/2\n");
+        printf("\t 0 - Functional Simulator\n");
+        printf("\t 1 - Pipeline Simulator with Forwarding\n");
+        printf("\t 2 - Pipeline Simulator without Forwarding\n");
+        return 1;
+    }
+
+    const char *filename = argv[1]; // Get the filename from the command-line argument
+    int mode = atoi(argv[2]);       // Get the mode to run
+
+    int words_read = file_read(filename);
+    // print_contents(0, words_read - 1);
+
+    PC = 0;
+    for (int i = 0; i < 32; i++)
+    {
+        registers[i] = 0;
+        modified_registers[i] = false; // Initialize modified registers
+    }
+
+    switch (mode)
+    {
+    case 0:
+        // Functional Simulator
+        functional_simulator(words_read);
+        break;
+    case 1:
+        // Pipeline Sumulator with Forwarding
+        break;
+    case 2:
+        // Pipeline Sumulator without Forwarding
+        break;
+    default:
+        printf("\nINVALID MODE enteted!\nPlease enter a valid mode - 0/1/2\n\n");
+        printf("Usage: %s <Filename> <Mode>\n", argv[0]);
+        printf("<Filename>: input mem filename\n");
+        printf("<Mode>: 0/1/2\n");
+        printf("\t 0 - Functional Simulator\n");
+        printf("\t 1 - Pipeline Simulator with Forwarding\n");
+        printf("\t 2 - Pipeline Simulator without Forwarding\n");
+        exit(1);
     }
 
     printf("\n[WARN] Simulation ended without HALT.\n");

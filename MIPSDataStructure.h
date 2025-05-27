@@ -24,18 +24,20 @@ typedef struct instruction
     uint32_t instruction;
 } instruction;
 
-typedef struct R_type
+typedef struct R_I_type
 {
     uint8_t opcode;
     uint8_t rs;
     uint8_t rt;
     uint8_t rd;
-} R_type;
-
-typedef struct I_type
-{
-    uint8_t opcode;
-    uint8_t rs;
-    uint8_t rt;
     int16_t imm;
-} I_type;
+    bool R_or_I_type; // true for R-Type and false for I-Type
+} R_I_type;
+
+// typedef struct I_type
+// {
+//     uint8_t opcode;
+//     uint8_t rs;
+//     uint8_t rt;
+//     int16_t imm;
+// } I_type;

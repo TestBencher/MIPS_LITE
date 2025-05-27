@@ -115,21 +115,26 @@ int decode(instruction fetched_instr, R_type *r_type, I_type *i_type)
 void halt_summary()
 {
     printf("\n--- Simulation Summary ---\n");
-    printf("Program Counter (PC): %d\n", PC);
-    printf("Total Stalls: %d\n", 0);
-    printf("Total Instructions Executed: %d\n", total_instructions);
-    printf("Arithmetic Instructions: %d\n", arithmetic_count);
-    printf("Logical Instructions: %d\n", logical_count);
-    printf("Memory Access Instructions: %d\n", memory_count);
-    printf("Control Transfer Instructions: %d\n", control_count);
+    printf("- Program Counter (PC): %d\n", PC);
+    printf("- Total Stalls: %d\n", 0);
+    printf("- Total Instructions Executed: %d\n", total_instructions);
+    printf("  |- Arithmetic Instructions: %d\n", arithmetic_count);
+    printf("  |- Logical Instructions: %d\n", logical_count);
+    printf("  |- Memory Access Instructions: %d\n", memory_count);
+    printf("  |- Control Transfer Instructions: %d\n", control_count);
 
-    printf("\nFinal Register States (non-zero only):\n");
-    for (int i = 0; i < 32; i++)
+    printf("\nFinal Register States (Modified only):\n");
+    for (int i = 0; i < 32; i += 4)
     {
-        if (registers[i] != 0)
+        for (int j = i; j < i + 4; j++)
         {
-            printf("R%-2d: %d\n", i, registers[i]);
+            if (modified_registers[j])
+            {
+                printf("R%-2d: %5d\t", j, registers[j]);
+            }
         }
+        if (modified_registers[i] || modified_registers[i + 1] || modified_registers[i + 2] || modified_registers[i + 3])
+            printf("\n");
     }
 
     printf("\nFinal Memory States (Modified only):\n");
@@ -137,7 +142,7 @@ void halt_summary()
     {
         if (modified_memory[i])
         {
-            printf("Memory[0x%04X]: 0x%08X\n", i * 4, memory[i]);
+            printf("Memory[%d]: %d\n", i * 4, memory[i]);
         }
     }
 
@@ -359,12 +364,6 @@ int main(int argc, char *argv[])
         registers[i] = 0;
         modified_registers[i] = false; // Initialize modified registers
     }
-
-    // Register & Memory Initialization for test
-    // registers[4] = 10;
-    // registers[5] = 20;
-    // registers[19] = 123;
-    // memory[(30 + 4) / 4] = 777;
 
     while (PC / 4 < words_read)
     {

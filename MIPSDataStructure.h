@@ -7,7 +7,8 @@
 #define MEMORY_SIZE 4096 // 4KB
 
 // Global Variables
-uint32_t memory[MEMORY_SIZE/4];
+uint32_t memory[MEMORY_SIZE / 4];
+bool modified_memory[MEMORY_SIZE / 4] = {false}; // Array to track modified memory
 int32_t registers[32];
 bool modified_registers[32] = {false}; // Array to track modified registers
 uint32_t PC = 0;

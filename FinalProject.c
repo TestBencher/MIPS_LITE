@@ -87,7 +87,7 @@ int decode(instruction fetched_instr, R_type *r_type, I_type *i_type)
 
         // Debug output
         printf("DEBUG: Decoded R-type Instruction: %s R%d, R%d, R%d\n",
-               get_instruction_name(opcode), r_type->rd, r_type->rs, r_type->rt);
+               get_instruction_name(opcode), r_type->rs, r_type->rt, r_type->rd);
         printf("DEBUG: Opcode: %4x, Rs: %4x, Rt: %4x, Rd: %4x\n", opcode, r_type->rs, r_type->rt, r_type->rd);
 
         return 0; // Return 0 for R-type
@@ -105,7 +105,7 @@ int decode(instruction fetched_instr, R_type *r_type, I_type *i_type)
 
         // Debug output
         printf("DEBUG: Decoded I-type Instruction: %s R%d, R%d, %d\n",
-               get_instruction_name(opcode), i_type->rt, i_type->rs, i_type->imm);
+               get_instruction_name(opcode), i_type->rs, i_type->rt, i_type->imm);
         printf("DEBUG: Opcode: %4x, Rs: %4x, Rt: %4x, Imm: %4x\n", opcode, i_type->rs, i_type->rt, i_type->imm);
 
         return 1; // Return 1 for I-type
@@ -115,6 +115,8 @@ int decode(instruction fetched_instr, R_type *r_type, I_type *i_type)
 void halt_summary()
 {
     printf("\n--- Simulation Summary ---\n");
+    printf("Program Counter (PC): %d\n", PC);
+    printf("Total Stalls: %d\n", 0);
     printf("Total Instructions Executed: %d\n", total_instructions);
     printf("Arithmetic Instructions: %d\n", arithmetic_count);
     printf("Logical Instructions: %d\n", logical_count);
@@ -130,10 +132,10 @@ void halt_summary()
         }
     }
 
-    printf("\nFinal Memory States (non-zero only):\n");
-    for (int i = 0; i < MEMORY_SIZE; i++)
+    printf("\nFinal Memory States (Modified only):\n");
+    for (int i = 0; i < MEMORY_SIZE / 4; i++)
     {
-        if (memory[i] != 0)
+        if (modified_memory[i])
         {
             printf("Memory[0x%04X]: 0x%08X\n", i * 4, memory[i]);
         }
@@ -244,25 +246,34 @@ void execute_i_type(I_type *i_type)
             exit(1);
         }
         memory[effective_address / 4] = registers[i_type->rt];
+        modified_memory[effective_address / 4] = true; // Mark memory as modified
         memory_count++;
     }
     break;
     case 0x0E: // BZ
         if (registers[i_type->rs] == 0)
-            PC += i_type->imm*4;
+        {
+            PC -= 4;
+            PC += i_type->imm * 4;
+        }
         control_count++;
         break;
     case 0x0F: // BEQ
         if (registers[i_type->rs] == registers[i_type->rt])
-            PC += i_type->imm*4;
+        {
+            PC -= 4;
+            PC += i_type->imm * 4;
+        }
         control_count++;
         break;
     case 0x10: // JR
-        PC = registers[i_type->rs];
+        PC -= 4;
+        PC = registers[i_type->rs]; // Assuming PC is in bytes
         control_count++;
         break;
     case 0x11: // HALT
         printf("\n[INFO] HALT instruction encountered. Terminating simulation.\n");
+        control_count++;
         halt_summary();
     default:
         printf("\n[ERROR] Unknown I-type opcode: 0x%02X\n", i_type->opcode);

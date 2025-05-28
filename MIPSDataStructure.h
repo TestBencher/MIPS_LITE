@@ -34,6 +34,30 @@ typedef struct R_I_type
     bool R_or_I_type; // true for R-Type and false for I-Type
 } R_I_type;
 
+#define PIPELINE_DEPTH 5
+
+typedef struct PipelineStage
+{
+    instruction raw;
+    R_I_type decoded;
+    int32_t alu_result;
+    int32_t mem_result;
+    bool valid;
+    bool isStall;
+    char *raw_str;
+} PipelineStage;
+
+PipelineStage pipeline[PIPELINE_DEPTH];
+
+typedef struct HazardPacket
+{
+    bool isHazard;
+    int hazardCnt;
+} HazardPacket;
+
+int total_stalls = 0;
+int total_cycles = 0;
+
 // typedef struct I_type
 // {
 //     uint8_t opcode;

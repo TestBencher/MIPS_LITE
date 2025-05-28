@@ -49,6 +49,47 @@ const char *get_instruction_name(uint8_t opcode)
     }
 }
 
+char *get_decode_str(instruction raw)
+{
+    uint32_t instr = raw.instruction;
+    uint8_t opcode = (instr >> 26) & 0x3F; // Extract opcode (6 bits)
+    uint8_t rs, rt, rd;
+    int16_t imm;
+    char *decodedInst = malloc(100 * sizeof(char));
+    sprintf(decodedInst, "NULL");
+    // Define R-type opcodes explicitly
+    if (opcode == 0x00 || opcode == 0x02 || opcode == 0x04 || opcode == 0x06 ||
+        opcode == 0x08 || opcode == 0x0A) // R-type instruction opcodes
+    {
+        rs = (instr >> 21) & 0x1F; // Extract Rs (5 bits)
+        rt = (instr >> 16) & 0x1F; // Extract Rt (5 bits)
+        rd = (instr >> 11) & 0x1F; // Extract Rd (5 bits)
+
+        sprintf(decodedInst, "%s R%d, R%d, R%d", get_instruction_name(opcode), rs, rt, rd);
+        // Debug output
+        // printf("DEBUG: Decoded R-type Instruction: %s R%d, R%d, R%d\n",
+        //        get_instruction_name(opcode), r_i_type->rs, r_i_type->rt, r_i_type->rd);
+        // printf("DEBUG: Opcode: %4x, Rs: %4x, Rt: %4x, Rd: %4x\n", opcode, r_i_type->rs, r_i_type->rt, r_i_type->rd);
+    }
+    else // I-type instruction
+    {
+        rs = (instr >> 21) & 0x1F; // Extract Rs (5 bits)
+        rt = (instr >> 16) & 0x1F; // Extract Rt (5 bits)
+        imm = instr & 0xFFFF;      // Extract Imm (16 bits)
+
+        // Sign-extend the immediate value
+        if (imm & 0x8000)
+            imm |= 0xFFFF0000;
+
+        sprintf(decodedInst, "%s R%d, R%d, %d", get_instruction_name(opcode), rs, rt, imm);
+        // Debug output
+        // printf("DEBUG: Decoded I-type Instruction: %s R%d, R%d, %d\n",
+        //        get_instruction_name(opcode), r_i_type->rs, r_i_type->rt, r_i_type->imm);
+        // printf("DEBUG: Opcode: %4x, Rs: %4x, Rt: %4x, Imm: %4x\n", opcode, r_i_type->rs, r_i_type->rt, r_i_type->imm);
+    }
+    return decodedInst;
+}
+
 int file_read(const char *filename)
 {
     FILE *file = fopen(filename, "r");
@@ -106,7 +147,7 @@ instruction fetch()
 }
 
 // Decode Stage: Decodes the fetched instruction into R_type or I_type
-int decode(instruction fetched_instr, R_I_type *r_i_type)
+void decode(instruction fetched_instr, R_I_type *r_i_type)
 {
     uint32_t instr = fetched_instr.instruction;
     uint8_t opcode = (instr >> 26) & 0x3F; // Extract opcode (6 bits)
@@ -125,8 +166,6 @@ int decode(instruction fetched_instr, R_I_type *r_i_type)
         printf("DEBUG: Decoded R-type Instruction: %s R%d, R%d, R%d\n",
                get_instruction_name(opcode), r_i_type->rs, r_i_type->rt, r_i_type->rd);
         printf("DEBUG: Opcode: %4x, Rs: %4x, Rt: %4x, Rd: %4x\n", opcode, r_i_type->rs, r_i_type->rt, r_i_type->rd);
-
-        return 0; // Return 0 for R-type
     }
     else // I-type instruction
     {
@@ -144,8 +183,6 @@ int decode(instruction fetched_instr, R_I_type *r_i_type)
         printf("DEBUG: Decoded I-type Instruction: %s R%d, R%d, %d\n",
                get_instruction_name(opcode), r_i_type->rs, r_i_type->rt, r_i_type->imm);
         printf("DEBUG: Opcode: %4x, Rs: %4x, Rt: %4x, Imm: %4x\n", opcode, r_i_type->rs, r_i_type->rt, r_i_type->imm);
-
-        return 1; // Return 1 for I-type
     }
 }
 
@@ -153,7 +190,8 @@ void halt_summary()
 {
     printf("\n--- Simulation Summary ---\n");
     printf("- Program Counter (PC): %d\n", PC);
-    printf("- Total Stalls: %d\n", 0);
+    printf("- Total Clock Cycles: %d\n", total_cycles);
+    printf("- Total Stalls: %d\n", total_stalls);
     printf("- Total Instructions Executed: %d\n", total_instructions);
     printf("  |- Arithmetic Instructions: %d\n", arithmetic_count);
     printf("  |- Logical Instructions: %d\n", logical_count);
@@ -407,7 +445,7 @@ void functional_simulator(int words_read)
 
         printf("DEBUG: Decoding instruction 0x%08X\n", fetched_instr.instruction);
         R_I_type r_i_type = {0};
-        int instruction_type = decode(fetched_instr, &r_i_type);
+        decode(fetched_instr, &r_i_type);
 
         printf("DEBUG: Executing instruction\n");
         ALU_result = execute_r_i_type(&r_i_type);
@@ -420,6 +458,146 @@ void functional_simulator(int words_read)
 
         // Print modified registers
         printModRegs();
+    }
+}
+
+uint8_t shift_pipeline(uint8_t hazardCnt)
+{
+    // Shift WB, MEM, EX stages normally
+    pipeline[4] = pipeline[3];
+    pipeline[3] = pipeline[2];
+
+    if (hazardCnt > 0)
+    {
+        // Insert NOP into EX
+        pipeline[2].isStall = true;
+        pipeline[1].isStall = true;
+        pipeline[0].isStall = true;
+        hazardCnt--;
+        // ID and IF stages remain
+    }
+    else
+    {
+        pipeline[2] = pipeline[1];
+        pipeline[1] = pipeline[0];
+        pipeline[2].isStall = false;
+        pipeline[1].isStall = false;
+        pipeline[0].isStall = false;
+    }
+    return hazardCnt;
+}
+
+uint8_t has_RAW_hazard(R_I_type *curr, R_I_type *ex, R_I_type *mem)
+{
+    uint8_t hazardCnt = 0;
+    uint8_t src1 = curr->rs;
+    uint8_t src2 = (curr->opcode == 0x0F || curr->R_or_I_type) ? curr->rt : 0; // Rt only used in BEQ or R-type
+
+    if (mem && (mem->opcode <= 0x0B || mem->opcode == 0x0C))
+    {
+        uint8_t mem_dst = mem->R_or_I_type ? mem->rd : mem->rt;
+        if ((src1 && src1 == mem_dst) || (src2 && src2 == mem_dst))
+        {
+            hazardCnt = 1;
+        }
+    }
+    if (ex && (ex->opcode <= 0x0B || ex->opcode == 0x0C))
+    {
+        uint8_t ex_dst = ex->R_or_I_type ? ex->rd : ex->rt;
+        if ((src1 && src1 == ex_dst) || (src2 && src2 == ex_dst))
+        {
+            hazardCnt = 2;
+        }
+    }
+    return hazardCnt;
+}
+
+void print_pipeline()
+{
+    printf("DEBUG: Pipeline contents -\n");
+    if (pipeline[0].valid)
+    {
+        if (!pipeline[0].isStall)
+            printf("IF: %s\n", pipeline[0].raw_str);
+        else
+            printf("IF: Stall\n");
+    }
+    if (pipeline[1].valid)
+    {
+        if (!pipeline[1].isStall)
+            printf("ID: %s\n", pipeline[1].raw_str);
+        else
+            printf("ID: Stall\n");
+    }
+    if (pipeline[2].valid)
+    {
+        if (!pipeline[2].isStall)
+            printf("EX: %s\n", pipeline[2].raw_str);
+        else
+            printf("EX: Stall\n");
+    }
+    if (pipeline[3].valid)
+    {
+        if (!pipeline[3].isStall)
+            printf("MEM: %s\n", pipeline[3].raw_str);
+        else
+            printf("MEM: Stall\n");
+    }
+    if (pipeline[4].valid)
+    {
+        if (!pipeline[4].isStall)
+            printf("WB: %s\n", pipeline[4].raw_str);
+        else
+            printf("WB: Stall\n");
+    }
+    printf("\n");
+}
+
+void pipeline_simulator_no_forwarding(int words_read)
+{
+    memset(pipeline, 0, sizeof(pipeline));
+    uint8_t hazardCnt = 0;
+    int32_t ALU_result, mem_result = 0;
+    while (PC / 4 < words_read)
+    {
+        printf("DEBUG: NEW LOOP START\n");
+        if (!pipeline[0].isStall)
+        {
+            printf("\nDEBUG: Fetching instruction at PC = 0x%08X\n", PC);
+            pipeline[0].raw = fetch();
+            pipeline[0].raw_str = get_decode_str(pipeline[0].raw);
+            pipeline[0].valid = true;
+        }
+        if (pipeline[1].valid && !pipeline[1].isStall)
+        {
+            printf("DEBUG: Decoding instruction 0x%08X\n", pipeline[0].raw.instruction);
+            decode(pipeline[1].raw, &pipeline[1].decoded);
+            // check for hazard
+            hazardCnt = has_RAW_hazard(&pipeline[1].decoded, &pipeline[2].decoded, &pipeline[3].decoded);
+        }
+
+        if (pipeline[2].valid && !pipeline[2].isStall)
+        {
+            printf("DEBUG: Executing instruction\n");
+            pipeline[2].alu_result = execute_r_i_type(&pipeline[2].decoded);
+        }
+
+        if (pipeline[3].valid)
+        {
+            printf("DEBUG: MEM Stage\n");
+            pipeline[3].mem_result = run_mem_stage(pipeline[3].alu_result, &pipeline[3].decoded);
+        }
+
+        if (pipeline[4].valid)
+        {
+            printf("DEBUG: Write Back Stage\n");
+            run_wb_stage(pipeline[4].mem_result, &pipeline[4].decoded);
+        }
+        // Print modified registers
+        printf("DEBUG: hazardCnt = %d\n", hazardCnt);
+        printModRegs();
+        print_pipeline();
+        hazardCnt = shift_pipeline(hazardCnt);
     }
 }
 
@@ -456,10 +634,11 @@ int main(int argc, char *argv[])
         functional_simulator(words_read);
         break;
     case 1:
-        // Pipeline Sumulator with Forwarding
+        // Pipeline Sumulator without Forwarding
+        pipeline_simulator_no_forwarding(words_read);
         break;
     case 2:
-        // Pipeline Sumulator without Forwarding
+        // Pipeline Sumulator with Forwarding
         break;
     default:
         printf("\nINVALID MODE enteted!\nPlease enter a valid mode - 0/1/2\n\n");

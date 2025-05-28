@@ -609,7 +609,7 @@ void pipeline_simulator_no_forwarding(int words_read)
         printf("DEBUG: hazardCnt = %d\n", hazardCnt);
         printModRegs();
         print_pipeline();
-        // halt_summary();
+        halt_summary();
         hazardCnt = shift_pipeline(hazardCnt);
     }
 }

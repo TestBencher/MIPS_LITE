@@ -179,6 +179,12 @@ void decode(instruction fetched_instr, R_I_type *r_i_type)
         if (r_i_type->imm & 0x8000)
             r_i_type->imm |= 0xFFFF0000;
 
+        // check if we have HALT
+        if (opcode == 0x11)
+        {
+            halt_seen = true;
+        }
+
         // Debug output
         printf("DEBUG: Decoded I-type Instruction: %s R%d, R%d, %d\n",
                get_instruction_name(opcode), r_i_type->rs, r_i_type->rt, r_i_type->imm);
@@ -221,7 +227,7 @@ void halt_summary()
         }
     }
 
-    exit(0);
+    // exit(0);
 }
 
 // Execute Stage: Executes the decoded R or I-type instruction
@@ -323,6 +329,8 @@ int32_t execute_r_i_type(R_I_type *r_i_type)
             printf("\n[INFO] HALT instruction encountered. Terminating simulation.\n");
             control_count++;
             halt_summary();
+            exit(EXIT_FAILURE);
+            break;
         default:
             printf("\n[ERROR] Unknown I-type opcode: 0x%02X\n", r_i_type->opcode);
             exit(1);
@@ -412,8 +420,6 @@ void run_wb_stage(int32_t fetched_mem, R_I_type *r_i_type)
         case 0x10: // JR
             control_count++;
             break;
-        case 0x11: // HALT
-            printf("\n[INFO] HALT instruction encountered. Terminating simulation.\n");
         default:
             printf("\n[ERROR] Unknown I-type opcode: 0x%02X\n", r_i_type->opcode);
             exit(1);
@@ -493,6 +499,11 @@ uint8_t has_RAW_hazard(R_I_type *curr, R_I_type *ex, R_I_type *mem)
     uint8_t src1 = curr->rs;
     uint8_t src2 = (curr->opcode == 0x0F || curr->R_or_I_type) ? curr->rt : 0; // Rt only used in BEQ or R-type
 
+    if (halt_seen)
+    {
+        printf("DEBUG: HALT instruction encountered, terminating the simulation after draining the pipeline!\n");
+        return 2;
+    }
     if (mem && (mem->opcode <= 0x0B || mem->opcode == 0x0C))
     {
         uint8_t mem_dst = mem->R_or_I_type ? mem->rd : mem->rt;
@@ -509,6 +520,7 @@ uint8_t has_RAW_hazard(R_I_type *curr, R_I_type *ex, R_I_type *mem)
             hazardCnt = 2;
         }
     }
+
     return hazardCnt;
 }
 
@@ -561,14 +573,14 @@ void pipeline_simulator_no_forwarding(int words_read)
     while (PC / 4 < words_read)
     {
         printf("DEBUG: NEW LOOP START\n");
-        if (!pipeline[0].isStall)
+        if (!pipeline[0].isStall && !halt_seen)
         {
             printf("\nDEBUG: Fetching instruction at PC = 0x%08X\n", PC);
             pipeline[0].raw = fetch();
             pipeline[0].raw_str = get_decode_str(pipeline[0].raw);
             pipeline[0].valid = true;
         }
-        if (pipeline[1].valid && !pipeline[1].isStall)
+        if (pipeline[1].valid && !pipeline[1].isStall && !halt_seen)
         {
             printf("DEBUG: Decoding instruction 0x%08X\n", pipeline[0].raw.instruction);
             decode(pipeline[1].raw, &pipeline[1].decoded);
@@ -582,13 +594,13 @@ void pipeline_simulator_no_forwarding(int words_read)
             pipeline[2].alu_result = execute_r_i_type(&pipeline[2].decoded);
         }
 
-        if (pipeline[3].valid)
+        if (pipeline[3].valid && !pipeline[3].isStall)
         {
             printf("DEBUG: MEM Stage\n");
             pipeline[3].mem_result = run_mem_stage(pipeline[3].alu_result, &pipeline[3].decoded);
         }
 
-        if (pipeline[4].valid)
+        if (pipeline[4].valid && !pipeline[4].isStall)
         {
             printf("DEBUG: Write Back Stage\n");
             run_wb_stage(pipeline[4].mem_result, &pipeline[4].decoded);
@@ -597,6 +609,7 @@ void pipeline_simulator_no_forwarding(int words_read)
         printf("DEBUG: hazardCnt = %d\n", hazardCnt);
         printModRegs();
         print_pipeline();
+        // halt_summary();
         hazardCnt = shift_pipeline(hazardCnt);
     }
 }

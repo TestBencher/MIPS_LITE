@@ -12,6 +12,7 @@ bool modified_memory[MEMORY_SIZE / 4] = {false}; // Array to track modified memo
 int32_t registers[32];
 bool modified_registers[32] = {false}; // Array to track modified registers
 uint32_t PC = 0;
+bool halt_seen = false;
 
 int total_instructions = 0;
 int arithmetic_count = 0;

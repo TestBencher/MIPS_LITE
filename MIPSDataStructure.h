@@ -49,6 +49,7 @@ typedef struct PipelineStage
     bool valid;
     bool isStall;
     char *raw_str;
+    bool frwd_flags[4]; // 00(0): src1_exe, 01(1): sec2_exe, 10(2): src1_mem, 11(3): src2_mem
 } PipelineStage;
 
 PipelineStage pipeline[PIPELINE_DEPTH];

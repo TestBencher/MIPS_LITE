@@ -513,7 +513,8 @@ int32_t execute_r_i_type_frwd(R_I_type *r_i_type, int32_t ALU_frwd, int32_t MEM_
             printf("\n[INFO] HALT instruction encountered. Terminating simulation.\n");
             control_count++;
             // total_cycles++;
-            PC -= 4;
+            if (mode == 2)
+                PC -= 4;
             halt_summary();
             exit(EXIT_FAILURE);
             break;

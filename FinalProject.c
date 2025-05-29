@@ -65,7 +65,7 @@ char *get_decode_str(instruction raw)
         rt = (instr >> 16) & 0x1F; // Extract Rt (5 bits)
         rd = (instr >> 11) & 0x1F; // Extract Rd (5 bits)
 
-        sprintf(decodedInst, "%s R%d, R%d, R%d", get_instruction_name(opcode), rs, rt, rd);
+        sprintf(decodedInst, "%s R%d, R%d, R%d", get_instruction_name(opcode), rd, rt, rs);
         // Debug output
         // printf("DEBUG: Decoded R-type Instruction: %s R%d, R%d, R%d\n",
         //        get_instruction_name(opcode), r_i_type->rs, r_i_type->rt, r_i_type->rd);
@@ -81,7 +81,7 @@ char *get_decode_str(instruction raw)
         if (imm & 0x8000)
             imm |= 0xFFFF0000;
 
-        sprintf(decodedInst, "%s R%d, R%d, %d", get_instruction_name(opcode), rs, rt, imm);
+        sprintf(decodedInst, "%s R%d, R%d, %d", get_instruction_name(opcode), rt, rs, imm);
         // Debug output
         // printf("DEBUG: Decoded I-type Instruction: %s R%d, R%d, %d\n",
         //        get_instruction_name(opcode), r_i_type->rs, r_i_type->rt, r_i_type->imm);
@@ -164,8 +164,8 @@ void decode(instruction fetched_instr, R_I_type *r_i_type)
 
         // Debug output
         printf("DEBUG: Decoded R-type Instruction: %s R%d, R%d, R%d\n",
-               get_instruction_name(opcode), r_i_type->rs, r_i_type->rt, r_i_type->rd);
-        printf("DEBUG: Opcode: %4x, Rs: %4x, Rt: %4x, Rd: %4x\n", opcode, r_i_type->rs, r_i_type->rt, r_i_type->rd);
+               get_instruction_name(opcode), r_i_type->rd, r_i_type->rt, r_i_type->rs);
+        printf("DEBUG: Opcode: %4x, Rd: %4x, Rt: %4x, Rs: %4x\n", opcode, r_i_type->rd, r_i_type->rt, r_i_type->rs);
     }
     else // I-type instruction
     {
@@ -187,8 +187,8 @@ void decode(instruction fetched_instr, R_I_type *r_i_type)
 
         // Debug output
         printf("DEBUG: Decoded I-type Instruction: %s R%d, R%d, %d\n",
-               get_instruction_name(opcode), r_i_type->rs, r_i_type->rt, r_i_type->imm);
-        printf("DEBUG: Opcode: %4x, Rs: %4x, Rt: %4x, Imm: %4x\n", opcode, r_i_type->rs, r_i_type->rt, r_i_type->imm);
+               get_instruction_name(opcode), r_i_type->rt, r_i_type->rs, r_i_type->imm);
+        printf("DEBUG: Opcode: %4x, Rt: %4x, Rs: %4x, Imm: %4x\n", opcode, r_i_type->rt, r_i_type->rs, r_i_type->imm);
     }
 }
 
@@ -311,19 +311,34 @@ int32_t execute_r_i_type(R_I_type *r_i_type)
             if (registers[r_i_type->rs] == 0)
             {
                 PC -= 4;
+                branch_taken = true;
+                if (mode == 1)
+                    PC -= 8;
                 PC += r_i_type->imm * 4;
+            }
+            else
+            {
+                branch_taken = false;
             }
             break;
         case 0x0F: // BEQ
             if (registers[r_i_type->rs] == registers[r_i_type->rt])
             {
                 PC -= 4;
+                branch_taken = true;
+                if (mode == 1)
+                    PC -= 8;
                 PC += r_i_type->imm * 4;
+            }
+            else
+            {
+                branch_taken = false;
             }
             break;
         case 0x10: // JR
             PC -= 4;
             PC = registers[r_i_type->rs]; // Assuming PC is in bytes
+            branch_taken = true;
             break;
         case 0x11: // HALT
             printf("\n[INFO] HALT instruction encountered. Terminating simulation.\n");
@@ -332,7 +347,7 @@ int32_t execute_r_i_type(R_I_type *r_i_type)
             exit(EXIT_FAILURE);
             break;
         default:
-            printf("\n[ERROR] Unknown I-type opcode: 0x%02X\n", r_i_type->opcode);
+            printf("\n[ERROR] [EXE] Unknown I-type opcode: 0x%02X\n", r_i_type->opcode);
             exit(1);
         }
     }
@@ -421,7 +436,7 @@ void run_wb_stage(int32_t fetched_mem, R_I_type *r_i_type)
             control_count++;
             break;
         default:
-            printf("\n[ERROR] Unknown I-type opcode: 0x%02X\n", r_i_type->opcode);
+            printf("\n[ERROR] [WB] Unknown I-type opcode: 0x%02X\n", r_i_type->opcode);
             exit(1);
         }
     }
@@ -482,12 +497,32 @@ uint8_t shift_pipeline(uint8_t hazardCnt)
         hazardCnt--;
         // ID and IF stages remain
     }
+    else if (branch_taken)
+    {
+        pipeline[2].isStall = true;
+        pipeline[1].isStall = true;
+        pipeline[0].isStall = false;
+        branch_taken = false;
+        branch_cnt = 1;
+    }
     else
     {
         pipeline[2] = pipeline[1];
         pipeline[1] = pipeline[0];
-        pipeline[2].isStall = false;
-        pipeline[1].isStall = false;
+        if (branch_cnt >= 1)
+        {
+            pipeline[1].isStall = false;
+            pipeline[2].isStall = true;
+            branch_cnt--;
+        }
+        else
+        {
+            pipeline[2].isStall = false;
+            pipeline[1].isStall = false;
+        }
+
+        // pipeline[2].isStall = false;
+        // pipeline[1].isStall = false;
         pipeline[0].isStall = false;
     }
     return hazardCnt;
@@ -565,6 +600,15 @@ void print_pipeline()
     printf("\n");
 }
 
+void print_struct(PipelineStage pipe)
+{
+    printf("pipeline.raw_str: %s\n", pipe.raw_str);
+    printf("pipeline.alu_result: %d\n", pipe.alu_result);
+    printf("pipeline.mem_result: %d\n", pipe.mem_result);
+    printf("pipeline.valid: %b\n", pipe.valid);
+    printf("pipeline.isStall: %b\n", pipe.isStall);
+}
+
 void pipeline_simulator_no_forwarding(int words_read)
 {
     memset(pipeline, 0, sizeof(pipeline));
@@ -572,7 +616,7 @@ void pipeline_simulator_no_forwarding(int words_read)
     int32_t ALU_result, mem_result = 0;
     while (PC / 4 < words_read)
     {
-        printf("DEBUG: NEW LOOP START\n");
+        printf("\nDEBUG: NEW LOOP START\n");
         if (!pipeline[0].isStall && !halt_seen)
         {
             printf("\nDEBUG: Fetching instruction at PC = 0x%08X\n", PC);
@@ -590,6 +634,7 @@ void pipeline_simulator_no_forwarding(int words_read)
 
         if (pipeline[2].valid && !pipeline[2].isStall)
         {
+            print_struct(pipeline[2]);
             printf("DEBUG: Executing instruction\n");
             pipeline[2].alu_result = execute_r_i_type(&pipeline[2].decoded);
         }
@@ -628,7 +673,7 @@ int main(int argc, char *argv[])
     }
 
     const char *filename = argv[1]; // Get the filename from the command-line argument
-    int mode = atoi(argv[2]);       // Get the mode to run
+    mode = atoi(argv[2]);           // Get the mode to run
 
     int words_read = file_read(filename);
     // print_contents(0, words_read - 1);

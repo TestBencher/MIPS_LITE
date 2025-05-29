@@ -17,8 +17,17 @@ OPCODES = {
 REV_OPCODES = {v: k for k, v in OPCODES.items()}
 
 def encode_instruction(line):
-    parts = line.strip().split()
-    if not parts: return None
+    line = line.strip()
+    if not line or line.startswith('#'):
+        return None
+
+    comment = ''
+    if '#' in line:
+        line, comment = line.split('#', 1)
+        line = line.strip()
+        comment = comment.strip()
+
+    parts = line.split()
     op = parts[0].upper()
     opcode = OPCODES.get(op)
     if opcode is None:
@@ -26,17 +35,14 @@ def encode_instruction(line):
 
     instr = 0
     if op in ('ADD', 'SUB', 'MUL', 'OR', 'AND', 'XOR'):
-        # Format: OP Rd, Rt, Rs (but encoding expects Rs, Rt, Rd)
         rd, rt, rs = [int(p.strip('R,')) for p in parts[1:]]
         instr |= (opcode << 26) | (rs << 21) | (rt << 16) | (rd << 11)
 
     elif op in ('ADDI', 'SUBI', 'MULI', 'ORI', 'ANDI', 'XORI', 'LDW', 'STW'):
-        # Format: OP Rt, Rs, Imm
         rt, rs, imm = parts[1:]
         rt = int(rt.strip('R,'))
         rs = int(rs.strip('R,'))
-        imm = int(imm)
-        imm &= 0xFFFF
+        imm = int(imm) & 0xFFFF
         instr |= (opcode << 26) | (rs << 21) | (rt << 16) | imm
 
     elif op == 'BZ':
@@ -59,7 +65,8 @@ def encode_instruction(line):
     elif op == 'HALT':
         instr |= (opcode << 26)
 
-    return f"{instr:08X}"
+    # return f"# {comment}\n{instr:08X}" if comment else f"{instr:08X}"
+    return f"{instr:08X}" if comment else f"{instr:08X}"
 
 def decode_instruction(hexcode):
     instr = int(hexcode, 16)
@@ -68,7 +75,7 @@ def decode_instruction(hexcode):
     rt = (instr >> 16) & 0x1F
     rd = (instr >> 11) & 0x1F
     imm = instr & 0xFFFF
-    if imm & 0x8000:  # sign extend
+    if imm & 0x8000:
         imm -= 0x10000
 
     op = REV_OPCODES.get(opcode, 'UNKNOWN')
@@ -91,15 +98,18 @@ def encode_file(input_file):
     output_file = input_file.replace('.s', '.o')
     with open(input_file, 'r') as fin, open(output_file, 'w') as fout:
         for line in fin:
-            if line.strip() == '' or line.strip().startswith('#'):
-                continue
-            fout.write(encode_instruction(line) + '\n')
+            encoded = encode_instruction(line)
+            if encoded:
+                fout.write(encoded + '\n')
     print(f"Encoded to {output_file}")
 
 def decode_file(input_file):
     output_file = input_file.replace('.o', '.s')
     with open(input_file, 'r') as fin, open(output_file, 'w') as fout:
         for line in fin:
+            if line.startswith('#') or line.strip() == '':
+                fout.write(line)
+                continue
             decoded = decode_instruction(line.strip())
             fout.write(decoded + '\n')
     print(f"Decoded to {output_file}")

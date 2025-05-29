@@ -343,6 +343,8 @@ int32_t execute_r_i_type(R_I_type *r_i_type)
         case 0x11: // HALT
             printf("\n[INFO] HALT instruction encountered. Terminating simulation.\n");
             control_count++;
+            // total_cycles++;
+            PC -= 4;
             halt_summary();
             exit(EXIT_FAILURE);
             break;
@@ -494,6 +496,7 @@ uint8_t shift_pipeline(uint8_t hazardCnt)
         pipeline[2].isStall = true;
         pipeline[1].isStall = true;
         pipeline[0].isStall = true;
+        // total_stalls++;
         hazardCnt--;
         // ID and IF stages remain
     }
@@ -503,17 +506,19 @@ uint8_t shift_pipeline(uint8_t hazardCnt)
         pipeline[1].isStall = true;
         pipeline[0].isStall = false;
         branch_taken = false;
-        branch_cnt = 1;
+        branch_delay = true;
+        // total_stalls++;
     }
     else
     {
         pipeline[2] = pipeline[1];
         pipeline[1] = pipeline[0];
-        if (branch_cnt >= 1)
+        if (branch_delay)
         {
             pipeline[1].isStall = false;
             pipeline[2].isStall = true;
-            branch_cnt--;
+            // total_stalls++;
+            branch_delay = false;
         }
         else
         {
@@ -537,6 +542,7 @@ uint8_t has_RAW_hazard(R_I_type *curr, R_I_type *ex, R_I_type *mem)
     if (halt_seen)
     {
         printf("DEBUG: HALT instruction encountered, terminating the simulation after draining the pipeline!\n");
+        // total_stalls++;
         return 2;
     }
     if (mem && (mem->opcode <= 0x0B || mem->opcode == 0x0C))
@@ -545,6 +551,7 @@ uint8_t has_RAW_hazard(R_I_type *curr, R_I_type *ex, R_I_type *mem)
         if ((src1 && src1 == mem_dst) || (src2 && src2 == mem_dst))
         {
             hazardCnt = 1;
+            // total_stalls++;
         }
     }
     if (ex && (ex->opcode <= 0x0B || ex->opcode == 0x0C))
@@ -553,10 +560,32 @@ uint8_t has_RAW_hazard(R_I_type *curr, R_I_type *ex, R_I_type *mem)
         if ((src1 && src1 == ex_dst) || (src2 && src2 == ex_dst))
         {
             hazardCnt = 2;
+            // total_stalls++;
         }
     }
 
     return hazardCnt;
+}
+
+uint8_t has_RAW_hazard_forwarding(R_I_type *curr, R_I_type *ex)
+{
+    if (!curr)
+        return 0;
+
+    uint8_t src1 = curr->rs;
+    uint8_t src2 = (curr->opcode == 0x0F || curr->R_or_I_type) ? curr->rt : 0;
+
+    // Only stall if EX stage has LDW and destination matches src1/src2
+    if (ex && ex->opcode == 0x0C) // LDW
+    {
+        uint8_t ex_dst = ex->R_or_I_type ? ex->rd : ex->rt;
+        if ((src1 && src1 == ex_dst) || (src2 && src2 == ex_dst))
+        {
+            return 1; // Stall due to LDW hazard
+        }
+    }
+
+    return 0; // No hazard requiring stall
 }
 
 void print_pipeline()
@@ -617,6 +646,12 @@ void pipeline_simulator_no_forwarding(int words_read)
     while (PC / 4 < words_read)
     {
         printf("\nDEBUG: NEW LOOP START\n");
+
+        total_cycles++;
+        // if (pipeline[0].valid || pipeline[1].valid || pipeline[2].valid || pipeline[3].valid || pipeline[4].valid)
+        // {
+        //     total_cycles++;
+        // }
         if (!pipeline[0].isStall && !halt_seen)
         {
             printf("\nDEBUG: Fetching instruction at PC = 0x%08X\n", PC);
@@ -630,6 +665,9 @@ void pipeline_simulator_no_forwarding(int words_read)
             decode(pipeline[1].raw, &pipeline[1].decoded);
             // check for hazard
             hazardCnt = has_RAW_hazard(&pipeline[1].decoded, &pipeline[2].decoded, &pipeline[3].decoded);
+            // hazardCnt = has_RAW_hazard_forwarding(&pipeline[1].decoded, &pipeline[2].decoded);
+            if (!halt_seen)
+                total_stalls += hazardCnt;
         }
 
         if (pipeline[2].valid && !pipeline[2].isStall)

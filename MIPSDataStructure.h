@@ -14,7 +14,7 @@ bool modified_registers[32] = {false}; // Array to track modified registers
 uint32_t PC = 0;
 bool halt_seen = false;
 bool branch_taken = false;
-uint8_t branch_cnt = 0;
+bool branch_delay = false;
 uint8_t mode = 0;
 
 int total_instructions = 0;

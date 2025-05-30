@@ -362,48 +362,59 @@ int32_t execute_r_i_type_frwd(R_I_type *r_i_type, int32_t ALU_frwd, int32_t MEM_
     int32_t ALU_result = 0;
     total_instructions++; // Increment total instructions counter
 
+    if (mode == 1)
+    {
+        for (int i = 0; i < PIPELINE_DEPTH; i++)
+        {
+            for (int j = 0; j < 4; j++)
+            {
+                pipeline[i].frwd_flags[j] = false;
+            }
+        }
+    }
+
     int32_t src1 = -1;
     int32_t src2 = -1;
-    printf("frwd flags: 0: %b, 1: %b, 2: %b, 3: %b\n", pipeline[2].frwd_flags[0], pipeline[2].frwd_flags[1], pipeline[2].frwd_flags[2], pipeline[2].frwd_flags[3]);
-    printf("ALU_frwd = %d\n", ALU_frwd);
-    printf("MEM_frwd = %d\n", MEM_frwd);
+    // printf("frwd flags: 0: %b, 1: %b, 2: %b, 3: %b\n", pipeline[2].frwd_flags[0], pipeline[2].frwd_flags[1], pipeline[2].frwd_flags[2], pipeline[2].frwd_flags[3]);
+    // printf("ALU_frwd = %d\n", ALU_frwd);
+    // printf("MEM_frwd = %d\n", MEM_frwd);
     if (pipeline[2].frwd_flags[0])
     {
         src1 = ALU_frwd;
         pipeline[2].frwd_flags[0] = false;
-        printf("[ALU_frwd] src1: %d\n", src1);
+        // printf("[ALU_frwd] src1: %d\n", src1);
     }
     else if (pipeline[2].frwd_flags[2])
     {
         src1 = MEM_frwd;
         pipeline[2].frwd_flags[2] = false;
-        printf("[MEM_frwd] src1: %d\n", src1);
+        // printf("[MEM_frwd] src1: %d\n", src1);
     }
     else
     {
         src1 = registers[r_i_type->rs];
-        printf("reg[R%d] src1: %d\n", r_i_type->rs, src1);
+        // printf("reg[R%d] src1: %d\n", r_i_type->rs, src1);
     }
     if (pipeline[2].frwd_flags[1])
     {
         src2 = ALU_frwd;
         pipeline[2].frwd_flags[1] = false;
-        printf("[ALU_frwd] src2: %d\n", src2);
+        // printf("[ALU_frwd] src2: %d\n", src2);
     }
     else if (pipeline[2].frwd_flags[3])
     {
         src2 = MEM_frwd;
         pipeline[2].frwd_flags[3] = false;
-        printf("[MEM_frwd] src2: %d\n", src2);
+        // printf("[MEM_frwd] src2: %d\n", src2);
     }
     else
     {
         src2 = registers[r_i_type->rt];
-        printf("reg[R%d] src2: %d\n", r_i_type->rt, src2);
+        // printf("reg[R%d] src2: %d\n", r_i_type->rt, src2);
         // printf("[reg] src2: %d\n", src2);
     }
 
-    printf("src1 = %d, src2 = %d\n", src1, r_i_type->R_or_I_type ? src2 : r_i_type->imm);
+    // printf("src1 = %d, src2 = %d\n", src1, r_i_type->R_or_I_type ? src2 : r_i_type->imm);
 
     if (r_i_type->R_or_I_type)
     {
@@ -510,10 +521,10 @@ int32_t execute_r_i_type_frwd(R_I_type *r_i_type, int32_t ALU_frwd, int32_t MEM_
             branch_taken = true;
             break;
         case 0x11: // HALT
-            printf("\n[INFO] HALT instruction encountered. Terminating simulation.\n");
+            printf("\n[INFO] HALT instruction at EXE stage. Terminating simulation.\n");
             control_count++;
             // total_cycles++;
-            if (mode == 2)
+            if (mode == 1 || mode == 2)
                 PC -= 4;
             halt_summary();
             exit(EXIT_FAILURE);
@@ -740,7 +751,6 @@ uint8_t has_RAW_hazard(R_I_type *curr, R_I_type *ex, R_I_type *mem)
 
 uint8_t has_RAW_hazard_forwarding(R_I_type *curr, R_I_type *ex, R_I_type *mem)
 {
-    // uint8_t hazardCnt = 0;
     uint8_t src1 = curr->rs;
     uint8_t src2 = (curr->opcode == 0x0F || curr->R_or_I_type) ? curr->rt : 0; // Rt only used in BEQ or R-type
 
@@ -783,14 +793,12 @@ uint8_t has_RAW_hazard_forwarding(R_I_type *curr, R_I_type *ex, R_I_type *mem)
         uint8_t ex_dst = ex->R_or_I_type ? ex->rd : ex->rt;
         if ((src1 && src1 == ex_dst))
         {
-            // memset(frwd_flags, 0, sizeof(frwd_flags));
             pipeline[1].frwd_flags[0] = true;
             printf("DEBUG: returning HazardCnt = 0\n");
             return 0;
         }
         if ((src2 && src2 == ex_dst))
         {
-            // memset(frwd_flags, 0, sizeof(frwd_flags));
             pipeline[1].frwd_flags[1] = true;
             printf("DEBUG: returning HazardCnt = 0\n");
             return 0;
@@ -801,14 +809,12 @@ uint8_t has_RAW_hazard_forwarding(R_I_type *curr, R_I_type *ex, R_I_type *mem)
         uint8_t mem_dst = mem->R_or_I_type ? mem->rd : mem->rt;
         if ((src1 && src1 == mem_dst))
         {
-            // memset(frwd_flags, 0, sizeof(frwd_flags));
             pipeline[1].frwd_flags[2] = true;
             printf("DEBUG: returning HazardCnt = 0\n");
             return 0;
         }
         if ((src2 && src2 == mem_dst))
         {
-            // memset(frwd_flags, 0, sizeof(frwd_flags));
             pipeline[1].frwd_flags[3] = true;
             printf("DEBUG: returning HazardCnt = 0\n");
             return 0;
@@ -878,10 +884,6 @@ void pipeline_simulator_no_forwarding(int words_read)
         printf("\nDEBUG: NEW LOOP START\n");
 
         total_cycles++;
-        // if (pipeline[0].valid || pipeline[1].valid || pipeline[2].valid || pipeline[3].valid || pipeline[4].valid)
-        // {
-        //     total_cycles++;
-        // }
         if (!pipeline[0].isStall && !halt_seen)
         {
             printf("\nDEBUG: Fetching instruction at PC = 0x%08X\n", PC);
@@ -895,7 +897,6 @@ void pipeline_simulator_no_forwarding(int words_read)
             decode(pipeline[1].raw, &pipeline[1].decoded);
             // check for hazard
             hazardCnt = has_RAW_hazard(&pipeline[1].decoded, &pipeline[2].decoded, &pipeline[3].decoded);
-            // hazardCnt = has_RAW_hazard_forwarding(&pipeline[1].decoded, &pipeline[2].decoded);
             if (!halt_seen)
                 total_stalls += hazardCnt;
         }
@@ -905,6 +906,7 @@ void pipeline_simulator_no_forwarding(int words_read)
             print_struct(pipeline[2]);
             printf("DEBUG: Executing instruction\n");
             pipeline[2].alu_result = execute_r_i_type(&pipeline[2].decoded);
+            // pipeline[2].alu_result = execute_r_i_type_frwd(&pipeline[2].decoded, pipeline[3].alu_result, pipeline[4].mem_result);
         }
 
         if (pipeline[3].valid && !pipeline[3].isStall)
@@ -947,13 +949,12 @@ void pipeline_simulator_with_forwarding(int words_read)
         if (pipeline[1].valid && !pipeline[1].isStall && !halt_seen)
         {
             printf("DEBUG: Decoding instruction 0x%08X\n", pipeline[0].raw.instruction);
-            print_struct(pipeline[1]);
             decode(pipeline[1].raw, &pipeline[1].decoded);
             // check for hazard
-            printf("DEBUG: hazardCnt before = %d\n", hazardCnt);
-            hazardCnt = has_RAW_hazard_forwarding(&pipeline[1].decoded, &pipeline[2].decoded, &pipeline[3].decoded);
-            // hazardCnt = has_RAW_hazard_forwarding(&pipeline[1].decoded, &pipeline[2].decoded);
-            printf("DEBUG: hazardCnt after = %d\n", hazardCnt);
+            if (mode == 1)
+                hazardCnt = has_RAW_hazard(&pipeline[1].decoded, &pipeline[2].decoded, &pipeline[3].decoded);
+            else
+                hazardCnt = has_RAW_hazard_forwarding(&pipeline[1].decoded, &pipeline[2].decoded, &pipeline[3].decoded);
             if (!halt_seen)
                 total_stalls += hazardCnt;
         }
@@ -963,7 +964,6 @@ void pipeline_simulator_with_forwarding(int words_read)
             print_struct(pipeline[2]);
             printf("DEBUG: Executing instruction\n");
             pipeline[2].alu_result = execute_r_i_type_frwd(&pipeline[2].decoded, pipeline[3].alu_result, pipeline[4].mem_result);
-            printf("DEBUG: pipeline[2].alu_result = %d\n", pipeline[2].alu_result);
         }
 
         if (pipeline[3].valid && !pipeline[3].isStall)
@@ -1020,7 +1020,8 @@ int main(int argc, char *argv[])
         break;
     case 1:
         // Pipeline Sumulator without Forwarding
-        pipeline_simulator_no_forwarding(words_read);
+        // pipeline_simulator_no_forwarding(words_read);
+        pipeline_simulator_with_forwarding(words_read);
         break;
     case 2:
         // Pipeline Sumulator with Forwarding

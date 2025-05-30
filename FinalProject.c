@@ -758,39 +758,25 @@ uint8_t has_RAW_hazard_forwarding(R_I_type *curr, R_I_type *ex, R_I_type *mem)
         return 2;
     }
 
-    if (mem && (mem->opcode <= 0x0B || mem->opcode == 0x0C))
-    {
-        uint8_t mem_dst = mem->R_or_I_type ? mem->rd : mem->rt;
-        if ((src1 && src1 == mem_dst))
-        {
-            // memset(frwd_flags, 0, sizeof(frwd_flags));
-            pipeline[1].frwd_flags[2] = true;
-            printf("DEBUG: returning HazardCnt = 0\n");
-            return 0;
-        }
-        if ((src2 && src2 == mem_dst))
-        {
-            // memset(frwd_flags, 0, sizeof(frwd_flags));
-            pipeline[1].frwd_flags[3] = true;
-            printf("DEBUG: returning HazardCnt = 0\n");
-            return 0;
-        }
-    }
     if (ex && (ex->opcode == 0x0C))
     {
         if ((src1 == ex->rt))
         {
             printf("src1(%d) == ex->rt(%d)\n", src1, ex->rt);
             pipeline[1].frwd_flags[2] = true;
+            // When LDW, we stall for 1 cycle first
+            printf("DEBUG: returning HazardCnt = 1\n");
+            return 1;
         }
         if ((src2 == ex->rt))
         {
             printf("src2(%d) == ex->rt(%d)\n", src2, ex->rt);
             pipeline[1].frwd_flags[3] = true;
+            // When LDW, we stall for 1 cycle first
+            printf("DEBUG: returning HazardCnt = 1\n");
+            return 1;
         }
-        // When LDW, we stall for 1 cycle first
-        printf("DEBUG: returning HazardCnt = 1\n");
-        return 1;
+        return 0;
     }
     if (ex && (ex->opcode <= 0x0B))
     {
@@ -806,6 +792,24 @@ uint8_t has_RAW_hazard_forwarding(R_I_type *curr, R_I_type *ex, R_I_type *mem)
         {
             // memset(frwd_flags, 0, sizeof(frwd_flags));
             pipeline[1].frwd_flags[1] = true;
+            printf("DEBUG: returning HazardCnt = 0\n");
+            return 0;
+        }
+    }
+    if (mem && (mem->opcode <= 0x0B || mem->opcode == 0x0C))
+    {
+        uint8_t mem_dst = mem->R_or_I_type ? mem->rd : mem->rt;
+        if ((src1 && src1 == mem_dst))
+        {
+            // memset(frwd_flags, 0, sizeof(frwd_flags));
+            pipeline[1].frwd_flags[2] = true;
+            printf("DEBUG: returning HazardCnt = 0\n");
+            return 0;
+        }
+        if ((src2 && src2 == mem_dst))
+        {
+            // memset(frwd_flags, 0, sizeof(frwd_flags));
+            pipeline[1].frwd_flags[3] = true;
             printf("DEBUG: returning HazardCnt = 0\n");
             return 0;
         }

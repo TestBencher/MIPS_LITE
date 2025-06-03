@@ -791,16 +791,34 @@ void pipeline_simulator(int words_read)
             pipeline[2].alu_result = execute_r_i_type(&pipeline[2].decoded, pipeline[3].alu_result, pipeline[4].mem_result);
         }
 
-        if (pipeline[3].valid && !pipeline[3].isStall)
+        if (pipeline[3].decoded.opcode == 0x0D)
         {
-            printf("DEBUG: MEM Stage\n");
-            pipeline[3].mem_result = run_mem_stage(pipeline[3].alu_result, &pipeline[3].decoded);
-        }
+            if (pipeline[4].valid && !pipeline[4].isStall)
+            {
+                printf("DEBUG: Write Back Stage\n");
+                run_wb_stage(pipeline[4].mem_result, &pipeline[4].decoded);
+            }
 
-        if (pipeline[4].valid && !pipeline[4].isStall)
+            if (pipeline[3].valid && !pipeline[3].isStall)
+            {
+                printf("DEBUG: MEM Stage\n");
+                pipeline[3].mem_result = run_mem_stage(pipeline[3].alu_result, &pipeline[3].decoded);
+            }
+        }
+        else
         {
-            printf("DEBUG: Write Back Stage\n");
-            run_wb_stage(pipeline[4].mem_result, &pipeline[4].decoded);
+
+            if (pipeline[3].valid && !pipeline[3].isStall)
+            {
+                printf("DEBUG: MEM Stage\n");
+                pipeline[3].mem_result = run_mem_stage(pipeline[3].alu_result, &pipeline[3].decoded);
+            }
+
+            if (pipeline[4].valid && !pipeline[4].isStall)
+            {
+                printf("DEBUG: Write Back Stage\n");
+                run_wb_stage(pipeline[4].mem_result, &pipeline[4].decoded);
+            }
         }
         // Print modified registers
         // printf("DEBUG: hazardCnt = %d\n", hazardCnt);

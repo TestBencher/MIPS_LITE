@@ -1,21 +1,8 @@
-/**
- * @file FinalProject.c
- * @brief MIPS-LITE Instruction Set Simulator with functional and pipelined modes.
- * 
- * This program simulates execution of MIPS-like instructions
- * using three modes:
- *   1. Functional Simulation (sequential execution)
- *   2. Pipelined Simulation (no forwarding)
- *   3. Pipelined Simulation (with forwarding)
- * 
- * It supports arithmetic, logic, memory, and control instructions.
- * 
- * @author Sai Vishwesh, Amey Kulkarni, Suraj Shetty, Subramanya Dhananjay
- * @date 2025-04-12
- */
-
-#include "MIPSDataStructure.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
+#include "MIPSDataStructure.h"
 
 const char *get_instruction_name(uint8_t opcode)
 {
@@ -103,195 +90,47 @@ char *get_decode_str(instruction raw)
     return decodedInst;
 }
 
-int clock_cycles = 0; // Total clock cycles for the simulation
-int stall_count = 0; // Total stalls encountered
-
-PipelineStage pipeline[5]; // Pipeline stages: IF, ID, EX, MEM, WB
-
-const char *inst_name(uint8_t opcode) {   // Returns the instruction name based on the opcode
-    switch (opcode) {
-    case 0x00: return "ADD"; 
-    case 0x01: return "ADDI";
-    case 0x02: return "SUB"; 
-    case 0x03: return "SUBI";
-    case 0x04: return "MUL"; 
-    case 0x05: return "MULI";
-    case 0x06: return "OR";  
-    case 0x07: return "ORI";
-    case 0x08: return "AND"; 
-    case 0x09: return "ANDI";
-    case 0x0A: return "XOR"; 
-    case 0x0B: return "XORI";
-    case 0x0C: return "LDW"; 
-    case 0x0D: return "STW";
-    case 0x0E: return "BZ";  
-    case 0x0F: return "BEQ";
-    case 0x10: return "JR";  
-    case 0x11: return "HALT";
-    default: return "UNKNOWN";
-    }
-}
-
-/**
- * @brief Loads a memory image from a text file into memory.
- *
- * Each line in the file should be a 32-bit hex instruction.
- * 
- * @param filename Path to the text file containing instructions.
- * @return Number of instructions successfully read.
- */
-
-int f_read(const char *filename) {
+int file_read(const char *filename)
+{
     FILE *file = fopen(filename, "r");
-    if (!file) {
-        printf("Error: Cannot open file.\n");
-        exit(1);
+    if (file == NULL)
+    {
+        printf("The file could not be opened.\n");
+        exit(EXIT_FAILURE);
     }
+
     char line[1024];
     int index = 0;
-    while (fgets(line, sizeof(line), file) && index < MEMORY_SIZE / 4) { // Read until EOF or memory limit (4096/4 = 1024 instructions)
-        memory[index++] = strtoul(line, NULL, 16);
+
+    while (fgets(line, sizeof(line), file) != NULL && index < MEMORY_SIZE)
+    {
+        uint32_t word = (uint32_t)strtoul(line, NULL, 16);
+        memory[index++] = word;
     }
+
     fclose(file);
 
-    if (index == 0) {
-        printf("Error: File is empty.\n");
-        exit(1);
+    if (index == 0)
+    {
+        printf("Error: The file is empty. No instructions read.\n");
+        exit(EXIT_FAILURE);
     }
+
+    printf("File Content Loaded. Number of instructions read: %d.\n", index);
     return index;
 }
-/**
- * @brief Prints the contents of memory in hexadecimal.
- * 
- * This function prints memory contents between the given indices
- * in a formatted hexadecimal view. It limits the output to
- * the allocated memory range.
- * 
- * @param start The starting index in memory.
- * @param end The ending index in memory.
- */
 
-void print_contents(int start, int end) {
-    for (int i = start; i <= end && i < MEMORY_SIZE / 4; i++) {
-        printf("0x%04X : 0x%08X\n", i * 4, memory[i]); // To print in hexadecimal format
-    }
-}
-
-/**
- * @brief Advances the pipeline by shifting stages.
- * 
- * This function shifts the pipeline stages to the next stage,moving instructions through the pipeline.
- * The first stage (IF) is set to invalid after shifting.
- * IF is at index 0, ID at 1, EX at 2, MEM at 3, and WB at 4.
- */
-
-void inst_pipeline() {
-    for (int i = 4; i > 0; i--) {  
-        pipeline[i] = pipeline[i - 1];
-    }
-    pipeline[0].valid = false;
-}
-
-/**
- * @brief Gets the stage of the producer instruction for a given destination register. Currently Unused. Do we need this for improving functionality?
- * 
- * This function checks the pipeline stages to find where the destination register
- * was last written to, allowing for forwarding in pipelined execution.
- * 
- * @param dest_reg The destination register to check.
- * @return The stage number (2=EX, 3=MEM, 4=WB) or -1 if not found.
- */
-
-int get_producer_stage(int dest_reg) {
-    for (int i = 2; i <= 4; i++) {
-        if (!pipeline[i].valid) continue;
-        int dest = (pipeline[i].type == 0) ? pipeline[i].r_type.rd : pipeline[i].i_type.rt;
-        if (dest == dest_reg && dest != 0) return i; // EX=2, MEM=3, WB=4
-    }
-    return -1;
-}
-
-/**
- * @brief Checks for RAW (Read After Write) hazards in the pipeline.
- * 
- * This function checks if the current instruction has a RAW hazard
- * with any of the instructions in the pipeline stages 2 to 4.
- * 
- * @param curr The current instruction stage to check for hazards.
- * @return true if a RAW hazard is detected, false otherwise.
- */
-
-bool raw_hazard(PipelineStage curr) {
-    if (!curr.valid) return false;
-
-    for (int i = 2; i <= 4; i++) {  // Check stages 2 to 4 for hazards
-        if (!pipeline[i].valid) continue;
-
-        int dest = (pipeline[i].type == 0) ? pipeline[i].r_type.rd : pipeline[i].i_type.rt;
-        int src1 = (curr.type == 0) ? curr.r_type.rs : curr.i_type.rs;  // Source registers of the current instruction. Current instruction can be R-type or I-type.
-        int src2 = (curr.type == 0) ? curr.r_type.rt : curr.i_type.rt; 
-
-        if ((src1 == dest || src2 == dest) && dest != 0)
-            return true;
-    }
-    return false;
-}
-
-/**
- * @brief Decodes a 32-bit instruction word into a PipelineStage structure.
- * 
- * This function extracts the opcode, source, destination registers, and immediate value
- * from the instruction word and populates the PipelineStage structure accordingly.
- * 
- * @param inst_word The 32-bit instruction word to decode.
- * @param pc The program counter value for this instruction.
- * @return A PipelineStage structure containing the decoded instruction.
- */
-
-PipelineStage decode(uint32_t inst_word, int pc) {
-    PipelineStage stage = {0};
-    stage.valid = true;
-    stage.pc = pc;
-    stage.instr.instruction = inst_word; // Store the raw instruction word
-
-    uint8_t opcode = (inst_word >> 26) & 0x3F; // Occupies bits 26-31 (6 bits)
-    uint8_t rs = (inst_word >> 21) & 0x1F;  // Occupies bits 21-25 (5 bits)
-    uint8_t rt = (inst_word >> 16) & 0x1F;  // Occupies bits 16-20 (5 bits)
-    uint8_t rd = (inst_word >> 11) & 0x1F;  // Occupies bits 11-15 (5 bits)
-    int16_t imm = inst_word & 0xFFFF;  // Occupies bits 0-15 (16 bits)
-    if (imm & 0x8000) imm |= 0xFFFF0000; // Sign-extend immediate value if negative
-
-    if (opcode == 0x00 || opcode == 0x02 || opcode == 0x04 ||
-        opcode == 0x06 || opcode == 0x08 || opcode == 0x0A) {
-        stage.type = 0;
-        stage.r_type = (R_type){opcode, rs, rt, rd};
-    } else {
-        stage.type = 1;
-        stage.i_type = (I_type){opcode, rs, rt, imm};
-    }
-
-    return stage;
-}
-
-/**
- * @brief Prints a summary of the simulation results.
- * 
- * This function outputs the total instruction counts, final register state,
- * total stalls, final memory state (non-zero contents), and timing statistics.
- */
-
-void summary() {                                         
-    printf("\nInstruction counts:\n");
-    printf("Total number of instructions: %d\n", total_instructions);
-    printf("Arithmetic instructions: %d\n", arithmetic_count);
-    printf("Logical instructions: %d\n", logical_count);
-    printf("Memory access instructions: %d\n", memory_count);
-    printf("Control transfer instructions: %d\n", control_count);                                
-    printf("\nFinal register state:\n");                                 
-    printf("Program counter: %d\n", PC);
-    for (int i = 0; i < 32; i++) {
-        if (registers[i] != 0) {
-            printf("R%d : %d\n", i, registers[i]);
+void print_contents(int start, int end)
+{
+    printf("\n--- Loaded Memory Contents ---\n");
+    for (int i = start; i <= end && i < MEMORY_SIZE; i++)
+    {
+        printf("0x%04X : 0x%08X : ", i * 4, memory[i]);
+        for (int b = 31; b >= 0; b--)
+        {
+            printf("%d", (memory[i] >> b) & 1);
+            if (b % 4 == 0)
+                printf(" ");
         }
         printf("\n");
     }
@@ -666,142 +505,18 @@ void run_wb_stage(int32_t fetched_mem, R_I_type *r_i_type)
     }
 }
 
-/**
- * @brief Simulates the functional execution of instructions (No pipelining).
- * 
- * This function executes instructions sequentially, updating registers and memory.
- * It counts the number of executed instructions and handles HALT instruction.
- * 
- * @param word_count The number of words (instructions) to simulate.
- */
-
-void functional_simulation(int word_count) {
-    while (PC / 4 < word_count) {
-        uint32_t instruction = memory[PC / 4];
-        uint8_t opcode = (instruction >> 26) & 0x3F;
-        uint8_t rs = (instruction >> 21) & 0x1F;
-        uint8_t rt = (instruction >> 16) & 0x1F;
-        uint8_t rd = (instruction >> 11) & 0x1F;
-        int16_t imm = instruction & 0xFFFF;
-        if (imm & 0x8000) imm |= 0xFFFF0000;
-
-        total_instructions++;
-
-        switch (opcode) {
-            case 0x00: // ADD
-                registers[rd] = registers[rs] + registers[rt];
-                modified_registers[rd] = true;
-                arithmetic_count++;
-                PC += 4;
-                break;
-            case 0x01: // ADDI
-                registers[rt] = registers[rs] + imm;
-                modified_registers[rt] = true;
-                arithmetic_count++;
-                PC += 4;
-                break;
-            case 0x02: // SUB
-                registers[rd] = registers[rs] - registers[rt];
-                modified_registers[rd] = true;
-                arithmetic_count++;
-                PC += 4;
-                break;
-            case 0x03: // SUBI
-                registers[rt] = registers[rs] - imm;
-                modified_registers[rt] = true;
-                arithmetic_count++;
-                PC += 4;
-                break;
-            case 0x04: // MUL
-                registers[rd] = registers[rs] * registers[rt];
-                modified_registers[rd] = true;
-                arithmetic_count++;
-                PC += 4;
-                break;
-            case 0x05: // MULI
-                registers[rt] = registers[rs] * imm;
-                modified_registers[rt] = true;
-                arithmetic_count++;
-                PC += 4;
-                break;
-            case 0x06: // OR
-                registers[rd] = registers[rs] | registers[rt];
-                modified_registers[rd] = true;
-                logical_count++;
-                PC += 4;
-                break;
-            case 0x07: // ORI
-                registers[rt] = registers[rs] | imm;
-                modified_registers[rt] = true;
-                logical_count++;
-                PC += 4;
-                break;
-            case 0x08: // AND
-                registers[rd] = registers[rs] & registers[rt];
-                modified_registers[rd] = true;
-                logical_count++;
-                PC += 4;
-                break;
-            case 0x09: // ANDI
-                registers[rt] = registers[rs] & imm;
-                modified_registers[rt] = true;
-                logical_count++;
-                PC += 4;
-                break;
-            case 0x0A: // XOR
-                registers[rd] = registers[rs] ^ registers[rt];
-                modified_registers[rd] = true;
-                logical_count++;
-                PC += 4;
-                break;
-            case 0x0B: // XORI
-                registers[rt] = registers[rs] ^ imm;
-                modified_registers[rt] = true;
-                logical_count++;
-                PC += 4;
-                break;
-            case 0x0C: // LDW
-                registers[rt] = memory[(registers[rs] + imm) / 4];
-                modified_registers[rt] = true;
-                memory_count++;
-                PC += 4;
-                break;
-            case 0x0D: // STW
-                memory[(registers[rs] + imm) / 4] = registers[rt];
-                memory_count++;
-                PC += 4;
-                break;
-            case 0x0E: // BZ
-                if (registers[rs] == 0)
-                    PC += imm * 4;
-                else
-                    PC += 4;
-                control_count++;
-                break;
-            case 0x0F: // BEQ
-                if (registers[rs] == registers[rt])
-                    PC += imm * 4;
-                else
-                    PC += 4;
-                control_count++;
-                break;
-            case 0x10: // JR
-                PC = registers[rs];
-                control_count++;
-                break;
-            case 0x11: // HALT
-                printf("\n[INFO] HALT encountered in functional simulation.\n");
-                PC += 4;  // Include HALT step in PC reporting
-                summary();
-                return;
-            default:
-                printf("\n[ERROR] Unknown opcode 0x%02X at PC=0x%08X\n", opcode, PC);
-                exit(1);
+void printModRegs()
+{
+    printf("\nModified Registers:\n");
+    for (int i = 0; i < 32; i++)
+    {
+        if (modified_registers[i])
+        {
+            printf("R%d = %d\n", i, registers[i]);
+            // modified_registers[i] = false; // Reset the modified flag
         }
     }
-
-    printf("\n[WARN] Functional simulation ended without HALT.\n");
-    summary();
+    printf("\n");
 }
 
 void functional_simulator(int words_read)

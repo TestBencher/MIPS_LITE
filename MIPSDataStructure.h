@@ -77,3 +77,5 @@ int total_cycles = 0;
 //     uint8_t rt;
 //     int16_t imm;
 // } I_type;
+
+#endif //MIPS_DATA_STRUCTURE_H
